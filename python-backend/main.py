@@ -26,7 +26,7 @@ from airline.context import (
 )
 from server import AirlineServer
 
-app = FastAPI()
+app = FastAPI(docs_url=None, redoc_url=None, openapi_url=None)
 
 # Disable tracing for zero data retention orgs
 os.environ.setdefault("OPENAI_TRACING_DISABLED", "1")
@@ -215,5 +215,5 @@ __all__ = [
 
 if __name__ == "__main__":
     import uvicorn
-    port = int(os.getenv("PORT", 8080))
+    port = int(os.getenv("PORT", 8080)) # У вас здесь верно 8080
     uvicorn.run(app, host="0.0.0.0", port=port)
