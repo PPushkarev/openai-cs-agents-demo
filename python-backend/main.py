@@ -116,7 +116,7 @@ class BarkingDogRequest(BaseModel):
     mode: str = "agent_audit"
     chat_history: list = []
 
-@app.post("/webhook/aegis-scan")
+@app.post("/")
 async def aegis_scan_endpoint(
     request: BarkingDogRequest, server: AirlineServer = Depends(get_server)
 ):
