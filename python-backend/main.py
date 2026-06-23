@@ -1,5 +1,5 @@
 from __future__ import annotations as _annotations
-
+import asyncio
 import json
 import os
 from typing import Any, Dict
@@ -54,13 +54,35 @@ def get_server() -> AirlineServer:
 async def chatkit_endpoint(
     request: Request, server: AirlineServer = Depends(get_server)
 ) -> Response:
-    payload = await request.body()
-    result = await server.process(payload, {"request": request})
-    if isinstance(result, StreamingResult):
-        return StreamingResponse(result, media_type="text/event-stream")
-    if hasattr(result, "json"):
-        return Response(content=result.json, media_type="application/json")
-    return Response(content=result)
+    try:
+        payload = await request.body()
+
+        result = await asyncio.wait_for(
+            server.process(payload, {"request": request}),
+            timeout=25
+        )
+
+        if isinstance(result, StreamingResult):
+            return StreamingResponse(result, media_type="text/event-stream")
+
+        if hasattr(result, "json"):
+            return Response(content=result.json, media_type="application/json")
+
+        return Response(content=result)
+
+    except asyncio.TimeoutError:
+        return Response(
+            content=json.dumps({"error": "timeout"}),
+            status_code=504,
+            media_type="application/json"
+        )
+
+    except Exception as e:
+        return Response(
+            content=json.dumps({"error": str(e)}),
+            status_code=500,
+            media_type="application/json"
+        )
 
 
 @app.get("/chatkit/state")
@@ -78,25 +100,6 @@ async def chatkit_bootstrap(
     return await server.snapshot(None, {"request": None})
 
 
-@app.get("/chatkit/state/stream")
-async def chatkit_state_stream(
-    thread_id: str = Query(...),
-    server: AirlineServer = Depends(get_server),
-):
-    thread = await server.ensure_thread(thread_id, {"request": None})
-    queue = server.register_listener(thread.id)
-
-    async def event_generator():
-        try:
-            initial = await server.snapshot(thread.id, {"request": None})
-            yield f"data: {json.dumps(initial, default=str)}\n\n"
-            while True:
-                data = await queue.get()
-                yield f"data: {data}\n\n"
-        finally:
-            server.unregister_listener(thread.id, queue)
-
-    return StreamingResponse(event_generator(), media_type="text/event-stream")
 
 
 @app.get("/health")
@@ -138,7 +141,10 @@ async def aegis_scan_endpoint(
         payload_bytes = json.dumps(chatkit_payload).encode("utf-8")
         
         # 2. Process via the AirlineServer
-        result = await server.process(payload_bytes, {"request": None})
+        result = await asyncio.wait_for(
+    server.process(payload_bytes, {"request": None}),
+    timeout=25
+)
         
         reply_text = ""
         
