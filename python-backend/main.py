@@ -40,10 +40,13 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-chat_server = AirlineServer()
+chat_server = None
 
 
 def get_server() -> AirlineServer:
+    global chat_server
+    if chat_server is None:
+        chat_server = AirlineServer()
     return chat_server
 
 
