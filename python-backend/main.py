@@ -117,7 +117,7 @@ async def barkingdog_endpoint(
 ):
     try:
         chatkit_payload = {
-            "type": "threads.addUserMessage",
+            "type": "threads.add_user_message",
             "thread_id": "barkingdog-audit-thread",
             "content": request.message
         }
