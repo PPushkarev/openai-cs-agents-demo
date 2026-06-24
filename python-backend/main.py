@@ -117,10 +117,12 @@ async def barkingdog_endpoint(
 ):
     try:
         chatkit_payload = {
-            "type": "threads.add_user_message",
-            "thread_id": "barkingdog-audit-thread",
-            "content": request.message
-        }
+    "type": "threads.add_user_message",
+    "params": {
+        "thread_id": "barkingdog-audit-thread",
+        "content": request.message
+    }
+}
         payload_bytes = json.dumps(chatkit_payload).encode("utf-8")
         result = await asyncio.wait_for(
             server.process(payload_bytes, {"request": None}),
