@@ -108,7 +108,7 @@ async def health_check() -> Dict[str, str]:
 
 
 # BARKINGDOG ADAPTER
-from chatkit.types import UserMessageItem, UserMessageContent
+from chatkit.types import UserMessageItem, UserMessageTextContent, InferenceOptions
 from datetime import datetime
 
 class BarkingDogRequest(BaseModel):
@@ -119,18 +119,16 @@ async def barkingdog_endpoint(
     request: BarkingDogRequest, server: AirlineServer = Depends(get_server)
 ):
     try:
-        # Создаём thread напрямую
         thread = await server.ensure_thread(None, {"request": None})
 
-        # Создаём UserMessageItem напрямую — без ChatKit payload
         user_message = UserMessageItem(
             id=f"msg_{thread.id}",
             thread_id=thread.id,
             created_at=datetime.now(),
-            content=[UserMessageContent(text=request.message)]
+            content=[UserMessageTextContent(text=request.message)],
+            inference_options=InferenceOptions()
         )
 
-        # Запускаем respond() и собираем ответ
         reply_text = ""
         async for event in server.respond(thread, user_message, {"request": None}):
             from chatkit.types import ThreadItemDoneEvent, AssistantMessageItem
