@@ -121,52 +121,33 @@ async def aegis_scan_endpoint(
     request: BarkingDogRequest, server: AirlineServer = Depends(get_server)
 ):
     try:
-        # 1. Reconstruct chat history for ChatKit format
-        messages = []
-        for turn in request.chat_history:
-            role = turn.get("role", "user")
-            content = turn.get("content", "")
-            if content:
-                messages.append({"role": role, "content": content})
-        
-        # Add the current payload
-        messages.append({"role": "user", "content": request.message})
-        
-        # Wrap into ChatKit standard payload
         chatkit_payload = {
-    "type": "threads.addUserMessage",
-    "thread_id": "barkingdog-audit-thread",
-    "content": request.message
-}
-        
+            "type": "threads.addUserMessage",
+            "thread_id": "barkingdog-audit-thread",
+            "content": request.message
+        }
+
         payload_bytes = json.dumps(chatkit_payload).encode("utf-8")
-        
-        # 2. Process via the AirlineServer
+
         result = await asyncio.wait_for(
-    server.process(payload_bytes, {"request": None}),
-    timeout=25
-)
-        
+            server.process(payload_bytes, {"request": None}),
+            timeout=25
+        )
+
         reply_text = ""
-        
-        # 3. Extract text from StreamingResult or standard response
+
         if isinstance(result, StreamingResult):
             chunks = []
             async for chunk in result:
                 if isinstance(chunk, bytes):
                     chunk = chunk.decode("utf-8")
                 chunks.append(chunk)
-            
             raw_stream_content = "".join(chunks)
-            reply_text = raw_stream_content
-            
-            # Attempt to parse SSE format to get the final assistant message
-            if "data: " in reply_text:
+            if "data: " in raw_stream_content:
                 try:
-                    lines = [line.strip() for line in raw_stream_content.split("\n") if line.strip().startswith("data:")]
+                    lines = [l.strip() for l in raw_stream_content.split("\n") if l.strip().startswith("data:")]
                     if lines:
-                        last_line_data = lines[-1].replace("data:", "").strip()
-                        parsed = json.loads(last_line_data)
+                        parsed = json.loads(lines[-1].replace("data:", "").strip())
                         msgs = parsed.get("thread", {}).get("messages", [])
                         for msg in reversed(msgs):
                             if msg.get("role") == "assistant":
@@ -174,36 +155,24 @@ async def aegis_scan_endpoint(
                                 break
                 except Exception:
                     pass
+            if not reply_text:
+                reply_text = raw_stream_content
         else:
-            # Handle non-streaming JSON/String response
-            content_str = ""
-            if hasattr(result, "json"):
-                content_str = result.json
-            elif isinstance(result, (str, bytes)):
-                content_str = result if isinstance(result, str) else result.decode("utf-8")
-            
+            content_str = result.json if hasattr(result, "json") else (result if isinstance(result, str) else result.decode("utf-8"))
             try:
                 data = json.loads(content_str)
                 msgs = data.get("thread", {}).get("messages", [])
-                if not msgs and "messages" in data:
-                    msgs = data["messages"]
-                
                 for msg in reversed(msgs):
                     if msg.get("role") == "assistant":
                         reply_text = msg.get("content", "")
                         break
-                
                 if not reply_text:
                     reply_text = content_str
             except Exception:
                 reply_text = content_str
 
-        # Fallback if parsing failed
-        if not reply_text:
-            reply_text = "I am unable to process your request."
-            
-        return {"reply": reply_text}
-        
+        return {"reply": reply_text or "I am unable to process your request."}
+
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
