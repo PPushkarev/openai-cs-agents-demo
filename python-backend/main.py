@@ -107,17 +107,12 @@ async def health_check() -> Dict[str, str]:
     return {"status": "healthy"}
 
 
-# ---------------------------------------------------------
 # BARKINGDOG ADAPTER
-# ---------------------------------------------------------
-
 class BarkingDogRequest(BaseModel):
     message: str
-    mode: str = "agent_audit"
-    chat_history: list = []
 
 @app.post("/")
-async def aegis_scan_endpoint(
+async def barkingdog_endpoint(
     request: BarkingDogRequest, server: AirlineServer = Depends(get_server)
 ):
     try:
@@ -126,43 +121,37 @@ async def aegis_scan_endpoint(
             "thread_id": "barkingdog-audit-thread",
             "content": request.message
         }
-
         payload_bytes = json.dumps(chatkit_payload).encode("utf-8")
-
         result = await asyncio.wait_for(
             server.process(payload_bytes, {"request": None}),
             timeout=25
         )
-
         reply_text = ""
-
         if isinstance(result, StreamingResult):
             chunks = []
             async for chunk in result:
                 if isinstance(chunk, bytes):
                     chunk = chunk.decode("utf-8")
                 chunks.append(chunk)
-            raw_stream_content = "".join(chunks)
-            if "data: " in raw_stream_content:
+            raw = "".join(chunks)
+            if "data: " in raw:
                 try:
-                    lines = [l.strip() for l in raw_stream_content.split("\n") if l.strip().startswith("data:")]
+                    lines = [l.strip() for l in raw.split("\n") if l.strip().startswith("data:")]
                     if lines:
                         parsed = json.loads(lines[-1].replace("data:", "").strip())
-                        msgs = parsed.get("thread", {}).get("messages", [])
-                        for msg in reversed(msgs):
+                        for msg in reversed(parsed.get("thread", {}).get("messages", [])):
                             if msg.get("role") == "assistant":
                                 reply_text = msg.get("content", "")
                                 break
                 except Exception:
                     pass
             if not reply_text:
-                reply_text = raw_stream_content
+                reply_text = raw
         else:
-            content_str = result.json if hasattr(result, "json") else (result if isinstance(result, str) else result.decode("utf-8"))
+            content_str = result.json if hasattr(result, "json") else str(result)
             try:
                 data = json.loads(content_str)
-                msgs = data.get("thread", {}).get("messages", [])
-                for msg in reversed(msgs):
+                for msg in reversed(data.get("thread", {}).get("messages", [])):
                     if msg.get("role") == "assistant":
                         reply_text = msg.get("content", "")
                         break
@@ -170,29 +159,6 @@ async def aegis_scan_endpoint(
                     reply_text = content_str
             except Exception:
                 reply_text = content_str
-
-        return {"reply": reply_text or "I am unable to process your request."}
-
+        return {"reply": reply_text or "No response"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
-
-
-__all__ = [
-    "AirlineAgentChatContext",
-    "AirlineAgentContext",
-    "app",
-    "booking_cancellation_agent",
-    "chat_server",
-    "create_initial_context",
-    "faq_agent",
-    "flight_information_agent",
-    "public_context",
-    "refunds_compensation_agent",
-    "seat_special_services_agent",
-    "triage_agent",
-]
-
-if __name__ == "__main__":
-    import uvicorn
-    port = int(os.getenv("PORT", 8080)) # У вас здесь верно 8080
-    uvicorn.run(app, host="0.0.0.0", port=port)
