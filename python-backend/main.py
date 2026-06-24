@@ -108,6 +108,9 @@ async def health_check() -> Dict[str, str]:
 
 
 # BARKINGDOG ADAPTER
+from chatkit.types import UserMessageItem, UserMessageContent
+from datetime import datetime
+
 class BarkingDogRequest(BaseModel):
     message: str
 
@@ -116,52 +119,30 @@ async def barkingdog_endpoint(
     request: BarkingDogRequest, server: AirlineServer = Depends(get_server)
 ):
     try:
-        chatkit_payload = {
-    "type": "threads.create",
-    "params": {
-        "input": {
-            "content": [{"type": "input_text", "text": request.message}]
-        }
-    }
-}
-        payload_bytes = json.dumps(chatkit_payload).encode("utf-8")
-        result = await asyncio.wait_for(
-            server.process(payload_bytes, {"request": None}),
-            timeout=25
+        # Создаём thread напрямую
+        thread = await server.ensure_thread(None, {"request": None})
+
+        # Создаём UserMessageItem напрямую — без ChatKit payload
+        user_message = UserMessageItem(
+            id=f"msg_{thread.id}",
+            thread_id=thread.id,
+            created_at=datetime.now(),
+            content=[UserMessageContent(text=request.message)]
         )
+
+        # Запускаем respond() и собираем ответ
         reply_text = ""
-        if isinstance(result, StreamingResult):
-            chunks = []
-            async for chunk in result:
-                if isinstance(chunk, bytes):
-                    chunk = chunk.decode("utf-8")
-                chunks.append(chunk)
-            raw = "".join(chunks)
-            if "data: " in raw:
-                try:
-                    lines = [l.strip() for l in raw.split("\n") if l.strip().startswith("data:")]
-                    if lines:
-                        parsed = json.loads(lines[-1].replace("data:", "").strip())
-                        for msg in reversed(parsed.get("thread", {}).get("messages", [])):
-                            if msg.get("role") == "assistant":
-                                reply_text = msg.get("content", "")
-                                break
-                except Exception:
-                    pass
-            if not reply_text:
-                reply_text = raw
-        else:
-            content_str = result.json if hasattr(result, "json") else str(result)
-            try:
-                data = json.loads(content_str)
-                for msg in reversed(data.get("thread", {}).get("messages", [])):
-                    if msg.get("role") == "assistant":
-                        reply_text = msg.get("content", "")
-                        break
-                if not reply_text:
-                    reply_text = content_str
-            except Exception:
-                reply_text = content_str
+        async for event in server.respond(thread, user_message, {"request": None}):
+            from chatkit.types import ThreadItemDoneEvent, AssistantMessageItem
+            if isinstance(event, ThreadItemDoneEvent):
+                item = event.item
+                if isinstance(item, AssistantMessageItem):
+                    for part in item.content:
+                        text = getattr(part, "text", "")
+                        if text:
+                            reply_text += text
+
         return {"reply": reply_text or "No response"}
+
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
