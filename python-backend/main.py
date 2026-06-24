@@ -133,10 +133,11 @@ async def aegis_scan_endpoint(
         messages.append({"role": "user", "content": request.message})
         
         # Wrap into ChatKit standard payload
-        chatkit_payload = {
-            "thread_id": "barkingdog-audit-thread",
-            "messages": messages
-        }
+        cchatkit_payload = {
+    "type": "threads.addUserMessage",
+    "thread_id": "barkingdog-audit-thread",
+    "content": request.message
+}
         
         payload_bytes = json.dumps(chatkit_payload).encode("utf-8")
         
