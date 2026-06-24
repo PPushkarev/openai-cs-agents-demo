@@ -34,7 +34,7 @@ os.environ.setdefault("OPENAI_TRACING_DISABLED", "1")
 # CORS configuration (adjust as needed for deployment)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"], # Changed to allow BarkingDog scanner requests
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -100,19 +100,27 @@ async def chatkit_bootstrap(
     return await server.snapshot(None, {"request": None})
 
 
-
-
 @app.get("/health")
 async def health_check() -> Dict[str, str]:
     return {"status": "healthy"}
 
 
+# ---------------------------------------------------------
 # BARKINGDOG ADAPTER
-from chatkit.types import UserMessageItem, UserMessageTextContent, InferenceOptions
+# ---------------------------------------------------------
+from chatkit.types import (
+    UserMessageItem,
+    UserMessageTextContent,
+    InferenceOptions,
+    ThreadItemDoneEvent,
+    AssistantMessageItem,
+)
 from datetime import datetime
+
 
 class BarkingDogRequest(BaseModel):
     message: str
+
 
 @app.post("/")
 async def barkingdog_endpoint(
@@ -129,18 +137,22 @@ async def barkingdog_endpoint(
             inference_options=InferenceOptions()
         )
 
-        reply_text = ""
-        async for event in server.respond(thread, user_message, {"request": None}):
-            from chatkit.types import ThreadItemDoneEvent, AssistantMessageItem
-            if isinstance(event, ThreadItemDoneEvent):
-                item = event.item
-                if isinstance(item, AssistantMessageItem):
-                    for part in item.content:
-                        text = getattr(part, "text", "")
-                        if text:
-                            reply_text += text
+        async def collect_reply() -> str:
+            reply = ""
+            async for event in server.respond(thread, user_message, {"request": None}):
+                if isinstance(event, ThreadItemDoneEvent):
+                    item = event.item
+                    if isinstance(item, AssistantMessageItem):
+                        for part in item.content:
+                            text = getattr(part, "text", "")
+                            if text:
+                                reply += text
+            return reply
 
+        reply_text = await asyncio.wait_for(collect_reply(), timeout=60)
         return {"reply": reply_text or "No response"}
 
+    except asyncio.TimeoutError:
+        raise HTTPException(status_code=504, detail="Agent timeout")
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
